@@ -2,10 +2,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, root_mean_squared_error, r2_score
+from sklearn.metrics import mean_squared_error, r2_score, root_mean_squared_error
 from sklearn.preprocessing import StandardScaler, PolynomialFeatures
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
+
 
 def plot_y_yhat(y_test, y_pred, plot_title="baseline-model"):
     labels = ['x_1', 'y_1', 'x_2', 'y_2', 'x_3', 'y_3']
@@ -26,9 +27,8 @@ def plot_y_yhat(y_test, y_pred, plot_title="baseline-model"):
         plt.plot([x0, x1], [x0, x1], color='red')
         plt.axis('square')
 
-    plt.savefig('baseline.pdf')
+    plt.savefig(f'{plot_title}.pdf')
     plt.show()
-
 
 
 def custom_train_test_split(data, test_size=0.1, val_size=0.1, random_state=42):
@@ -44,16 +44,6 @@ def custom_train_test_split(data, test_size=0.1, val_size=0.1, random_state=42):
     return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def train_linear_model(X_train, y_train):
-    pipeline = Pipeline([
-        ('scaler', StandardScaler()),
-        ('regressor', LinearRegression())
-    ])
-
-    pipeline.fit(X_train, y_train)
-
-    return pipeline
-
 def train_polynomial_regression(X_train, y_train, degree=1):
     pipeline = Pipeline([
         ('scaler', StandardScaler()),  # Escalonamento
@@ -63,13 +53,24 @@ def train_polynomial_regression(X_train, y_train, degree=1):
     pipeline.fit(X_train, y_train)
     return pipeline
 
+
 def create_submission_file(pred, filename="baseline-model.csv"):
     baseline_model = pd.DataFrame(pred, columns=['x_1', 'y_1', 'x_2', 'y_2', 'x_3', 'y_3'])
-
     baseline_model.insert(0, 'Id', baseline_model.index)
-
-    baseline_model.to_csv("./baseline-model.csv", index=False)
+    baseline_model.to_csv(filename, index=False)
     print(f"File Created: {filename}")
+
+
+def evaluate_model(model, X_val, y_val, plot_title):
+    y_pred_val = model.predict(X_val)
+
+    plot_y_yhat(y_val.values, y_pred_val, plot_title=plot_title)
+
+    mse = mean_squared_error(y_val, y_pred_val)
+    r2 = r2_score(y_val, y_pred_val)
+
+    return mse, r2
+
 
 if __name__ == "__main__":
     # Split DataSet
@@ -77,27 +78,36 @@ if __name__ == "__main__":
 
     X_train, X_val, X_test, y_train, y_val, y_test = custom_train_test_split(data)
 
-    #Train DataSet
-    model = train_polynomial_regression(X_train, y_train)
-    # model = train_linear_model(X_train, y_train)
-    y_pred_val = model.predict(X_val)
+    # Explorando diferentes graus de polinômio
+    degrees = [1, 2, 3, 4, 5]
+    results = []
 
-    plot_y_yhat(y_val.values, y_pred_val)
+    for degree in degrees:
+        print(f"Training Polynomial Regression with degree {degree}")
+        model = train_polynomial_regression(X_train, y_train, degree=degree)
 
-    y_pred_test = model.predict(X_test)
+        mse, r2 = evaluate_model(model, X_val, y_val, plot_title=f"polynomial_degree_{degree}")
+        results.append((degree, mse, r2))
+        print(f"Degree {degree}: MSE = {mse}, R² = {r2}")
 
+    # Selecionando o melhor modelo baseado no menor MSE
+    best_degree = sorted(results, key=lambda x: x[1])[0][0]  # Melhor MSE
+    print(f"Best Polynomial Degree: {best_degree}")
 
-    # Real Execution
+    # Treinando o melhor modelo
+    best_model = train_polynomial_regression(X_train, y_train, degree=best_degree)
+
+    # Avaliando o conjunto de teste
+    mse_test, r2_test = evaluate_model(best_model, X_test, y_test, plot_title=f"best_polynomial_degree_{best_degree}")
+    print(f"Test Set Performance: MSE = {mse_test}, R² = {r2_test}")
+
+    # Fazendo previsões para o conjunto de teste (dados reais)
     data_test = pd.read_csv('./mlNOVA/X_test.csv')
     x_data = data_test[['t']]
     y_data = data_test[['x0_1', 'y0_1', 'x0_2', 'y0_2', 'x0_3', 'y0_3']]
 
-    data_pred = model.predict(x_data)
+    data_pred = best_model.predict(x_data)
 
-    # Generate Submission file
-    create_submission_file(data_pred)
+    # Gerando arquivo de submissão
+    create_submission_file(data_pred, filename=f"best_polynomial_degree_{best_degree}.csv")
 
-    mse = mean_squared_error(y_val, y_pred_val)
-    rmse = root_mean_squared_error(y_val, y_pred_val)
-    print(f"Mean Squared Error: {mse}")
-    print(f"Root Mean Squared Error: {rmse}")
